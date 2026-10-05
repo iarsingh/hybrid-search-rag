@@ -13,13 +13,13 @@ I would demonstrate the linked implementation or examples and distinguish that e
 ## 2. How is this repository organized?
 
 - [`src/hybrid/main.py`](src/hybrid/main.py): Implementation or supporting configuration.
+- [`src/hybrid/ops.py`](src/hybrid/ops.py): Implementation or supporting configuration.
 - [`src/hybrid/search.py`](src/hybrid/search.py): Implementation or supporting configuration.
 - [`requirements.txt`](requirements.txt): Implementation or supporting configuration.
 - [`src/hybrid/__init__.py`](src/hybrid/__init__.py): Implementation or supporting configuration.
-- [`tests/test_hybrid.py`](tests/test_hybrid.py): Executable checks and regression examples.
-- [`.github/workflows/ci.yml`](.github/workflows/ci.yml): GitHub Actions job definitions.
-- [`README.md`](README.md): Project explanations or operating notes.
-- [`corpus/budget.md`](corpus/budget.md): Project explanations or operating notes.
+- [`Dockerfile`](Dockerfile): Container build/service configuration.
+- [`Makefile`](Makefile): Implementation or supporting configuration.
+- [`docker-compose.yml`](docker-compose.yml): Container build/service configuration.
 
 [PROJECT_ARCHITECTURE.md](PROJECT_ARCHITECTURE.md) contains the component diagram and the implementation walkthrough.
 
@@ -68,11 +68,13 @@ It uses `' '.join`, `buffer.append`, `chunks.append`, `enumerate`, `flush`, `lin
 
 Explicit failure paths include:
 
-- `HTTPException(status_code=422, detail=str(exc))` in [`src/hybrid/main.py`](src/hybrid/main.py#L26).
+- `HTTPException(status_code=422, detail=str(exc))` in [`src/hybrid/main.py`](src/hybrid/main.py#L28).
+- `HTTPException(status_code=404, detail='workspace not found')` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L77).
+- `HTTPException(status_code=404, detail='job not found')` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L100).
+- `HTTPException(status_code=404, detail='job not found')` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L109).
+- `HTTPException(status_code=403, detail='production apply is disabled in this lab')` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L113).
 - `SearchError('question is empty')` in [`src/hybrid/search.py`](src/hybrid/search.py#L101).
 - `SearchError(f"mode must be one of {', '.join(sorted(MODES))}")` in [`src/hybrid/search.py`](src/hybrid/search.py#L103).
-- `SearchError('top_k must be from 1 to 10')` in [`src/hybrid/search.py`](src/hybrid/search.py#L105).
-- `SearchError(f'unknown source: {source}')` in [`src/hybrid/search.py`](src/hybrid/search.py#L109).
 
 I would test both the condition that reaches each exception and the caller that translates it. An explicit raise does not mean every malformed input or dependency failure is handled.
 
@@ -93,15 +95,20 @@ This is a concrete regression example from the repository. Its assertions establ
 
 ## 7. What HTTP interface does the code expose?
 
-- `GET /healthz` → `healthz` in [`src/hybrid/main.py`](src/hybrid/main.py#L9).
-- `GET /sources` → `sources` in [`src/hybrid/main.py`](src/hybrid/main.py#L14).
-- `POST /ask` → `post_ask` in [`src/hybrid/main.py`](src/hybrid/main.py#L22).
+- `GET /healthz` → `healthz` in [`src/hybrid/main.py`](src/hybrid/main.py#L11).
+- `GET /sources` → `sources` in [`src/hybrid/main.py`](src/hybrid/main.py#L16).
+- `POST /ask` → `post_ask` in [`src/hybrid/main.py`](src/hybrid/main.py#L24).
+- `GET /readyz` → `readyz` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L44).
+- `POST /workspaces` → `create_workspace` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L49).
+- `GET /workspaces` → `list_workspaces` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L66).
+- `POST /workspaces/{workspace_id}/jobs` → `create_job` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L73).
+- `GET /jobs/{job_id}` → `get_job` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L96).
 
 These are literal decorators. Application/router prefixes, authentication, and middleware must be checked in the corresponding setup code.
 
 ## 8. Where does state live, and what happens with multiple workers?
 
-Module-level containers include `STOP`, `MODES` in [`src/hybrid/search.py`](src/hybrid/search.py).
+Module-level containers include `_WORKSPACES`, `_JOBS`, `_AUDIT`, `_METRICS` in [`src/hybrid/ops.py`](src/hybrid/ops.py); `STOP`, `MODES` in [`src/hybrid/search.py`](src/hybrid/search.py).
 
 These containers belong to a Python process. Inspect which are constant fixtures and which are mutated. Mutable process state needs an explicit shared-storage or synchronization strategy before multiple workers can provide consistent behavior.
 
@@ -156,3 +163,9 @@ The implementation in [`src/hybrid/search.py`](src/hybrid/search.py#L99) branche
 - `source not in {p['source'] for p in passages}`
 
 A useful extension is a table-driven test that covers each condition just below, at, and above its boundary where applicable. These expressions are the current rules; changing them changes behavior and should be justified by the project’s acceptance criteria.
+
+## 14. What does the operations plane add, and where is its limit?
+
+[`src/hybrid/ops.py`](src/hybrid/ops.py) declares `GET /readyz`, `POST /workspaces`, `GET /workspaces`, `POST /workspaces/{workspace_id}/jobs`, `GET /jobs/{job_id}`, `POST /jobs/{job_id}/approve`, `GET /audit`, `GET /metrics`. Inspect the application’s `include_router` call for its URL prefix.
+
+Its state containers are `_WORKSPACES`, `_JOBS`, `_AUDIT`, `_METRICS`. The job-approval handler defines whether a target is accepted or refused; check that branch and the associated tests instead of treating a recorded job as a successful infrastructure apply.

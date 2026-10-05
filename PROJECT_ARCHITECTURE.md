@@ -14,8 +14,10 @@ This document describes files and symbols in this checkout. Deployment templates
 flowchart LR
     M0["src/hybrid/__init__.py"]
     M1["src/hybrid/main.py"]
-    M2["src/hybrid/search.py"]
+    M2["src/hybrid/ops.py"]
+    M3["src/hybrid/search.py"]
     M1 -->|imports| M2
+    M1 -->|imports| M3
 ```
 
 For Python repositories, arrows show resolved local imports, not network calls or deployment order. Otherwise the diagram is a repository component map; containment arrows do not assert runtime integration.
@@ -25,22 +27,41 @@ For Python repositories, arrows show resolved local imports, not network calls o
 | Component | Responsibility |
 | --- | --- |
 | [`src/hybrid/main.py`](src/hybrid/main.py) | HTTP handlers: `GET /healthz`, `GET /sources`, `POST /ask` |
+| [`src/hybrid/ops.py`](src/hybrid/ops.py) | HTTP handlers: `GET /readyz`, `POST /workspaces`, `GET /workspaces`, `POST /workspaces/{workspace_id}/jobs`, `GET /jobs/{job_id}` |
 | [`src/hybrid/search.py`](src/hybrid/search.py) | Functions: `stem`, `tokens`, `embed`, `chunk`, `load_corpus`, `bm25_scores`, `rrf` |
 | [`requirements.txt`](requirements.txt) | Implementation or supporting configuration |
 | [`src/hybrid/__init__.py`](src/hybrid/__init__.py) | Implementation or supporting configuration |
+| [`Dockerfile`](Dockerfile) | Container build/service configuration |
+| [`Makefile`](Makefile) | Implementation or supporting configuration |
+| [`docker-compose.yml`](docker-compose.yml) | Container build/service configuration |
 | [`tests/test_hybrid.py`](tests/test_hybrid.py) | Executable checks and regression examples |
+| [`tests/test_ops.py`](tests/test_ops.py) | Executable checks and regression examples |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | GitHub Actions job definitions |
 | [`README.md`](README.md) | Project explanations or operating notes |
 | [`corpus/budget.md`](corpus/budget.md) | Project explanations or operating notes |
 | [`corpus/oncall.md`](corpus/oncall.md) | Project explanations or operating notes |
 
+## Existing design and operating guides
+
+These checked-in guides provide the project’s detailed design, operational context, or deployment view:
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Request interface
 
 | Method and path | Handler | Source |
 | --- | --- | --- |
-| `GET /healthz` | `healthz` | [`src/hybrid/main.py`](src/hybrid/main.py#L9) |
-| `GET /sources` | `sources` | [`src/hybrid/main.py`](src/hybrid/main.py#L14) |
-| `POST /ask` | `post_ask` | [`src/hybrid/main.py`](src/hybrid/main.py#L22) |
+| `GET /healthz` | `healthz` | [`src/hybrid/main.py`](src/hybrid/main.py#L11) |
+| `GET /sources` | `sources` | [`src/hybrid/main.py`](src/hybrid/main.py#L16) |
+| `POST /ask` | `post_ask` | [`src/hybrid/main.py`](src/hybrid/main.py#L24) |
+| `GET /readyz` | `readyz` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L44) |
+| `POST /workspaces` | `create_workspace` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L49) |
+| `GET /workspaces` | `list_workspaces` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L66) |
+| `POST /workspaces/{workspace_id}/jobs` | `create_job` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L73) |
+| `GET /jobs/{job_id}` | `get_job` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L96) |
+| `POST /jobs/{job_id}/approve` | `approve_job` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L105) |
+| `GET /audit` | `audit` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L122) |
+| `GET /metrics` | `metrics` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L138) |
 
 The table lists literal route decorators found in the inspected Python modules. Router prefixes and middleware can add behavior; check the linked handler and application setup before calling an endpoint.
 
@@ -158,7 +179,11 @@ def embed(text):
 
 | Explicit exception | Source |
 | --- | --- |
-| `HTTPException(status_code=422, detail=str(exc))` | [`src/hybrid/main.py`](src/hybrid/main.py#L26) |
+| `HTTPException(status_code=422, detail=str(exc))` | [`src/hybrid/main.py`](src/hybrid/main.py#L28) |
+| `HTTPException(status_code=404, detail='workspace not found')` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L77) |
+| `HTTPException(status_code=404, detail='job not found')` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L100) |
+| `HTTPException(status_code=404, detail='job not found')` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L109) |
+| `HTTPException(status_code=403, detail='production apply is disabled in this lab')` | [`src/hybrid/ops.py`](src/hybrid/ops.py#L113) |
 | `SearchError('question is empty')` | [`src/hybrid/search.py`](src/hybrid/search.py#L101) |
 | `SearchError(f"mode must be one of {', '.join(sorted(MODES))}")` | [`src/hybrid/search.py`](src/hybrid/search.py#L103) |
 | `SearchError('top_k must be from 1 to 10')` | [`src/hybrid/search.py`](src/hybrid/search.py#L105) |
@@ -168,6 +193,7 @@ These are explicit exceptions in the inspected source, rather than a claim that 
 
 ## Data and state
 
+- [`src/hybrid/ops.py`](src/hybrid/ops.py) defines module-level containers: `_WORKSPACES`, `_JOBS`, `_AUDIT`, `_METRICS`.
 - [`src/hybrid/search.py`](src/hybrid/search.py) defines module-level containers: `STOP`, `MODES`.
 
 Module-level dictionaries/lists live in a Python process. They can be fixtures or mutable state; inspect writes before treating them as persistent storage. A production extension would need to define persistence and concurrency behavior explicitly.
@@ -205,6 +231,12 @@ The implementation in [`src/hybrid/search.py`](src/hybrid/search.py#L99) branche
 
 A useful extension is a table-driven test that covers each condition just below, at, and above its boundary where applicable. These expressions are the current rules; changing them changes behavior and should be justified by the project’s acceptance criteria.
 
+### What does the operations plane add, and where is its limit
+
+[`src/hybrid/ops.py`](src/hybrid/ops.py) declares `GET /readyz`, `POST /workspaces`, `GET /workspaces`, `POST /workspaces/{workspace_id}/jobs`, `GET /jobs/{job_id}`, `POST /jobs/{job_id}/approve`, `GET /audit`, `GET /metrics`. Inspect the application’s `include_router` call for its URL prefix.
+
+Its state containers are `_WORKSPACES`, `_JOBS`, `_AUDIT`, `_METRICS`. The job-approval handler defines whether a target is accepted or refused; check that branch and the associated tests instead of treating a recorded job as a successful infrastructure apply.
+
 ## Setup and verification
 
 The following commands are derived from the checked-in dependency/test contracts. Execute them from the repository root; the block prepares a local environment, not a cloud deployment.
@@ -218,7 +250,7 @@ python -m pytest -q
 
 Python dependencies: [`requirements.txt`](requirements.txt).
 
-Test entry points: [`tests/test_hybrid.py`](tests/test_hybrid.py).
+Test entry points: [`tests/test_hybrid.py`](tests/test_hybrid.py), [`tests/test_ops.py`](tests/test_ops.py).
 
 Automation definitions: [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Read their triggers and job steps to determine what CI actually runs.
 
