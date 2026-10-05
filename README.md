@@ -69,3 +69,7 @@ Each passage in the response carries `bm25`, `dense`, `fused`, `bm25_rank`, `den
 curl -s -X POST localhost:8000/ask -H 'content-type: application/json' \
   -d '{"question":"Who may roll back without approval?","mode":"hybrid","top_k":3}'
 ```
+
+## Ops plane
+
+Workspaces, tenant isolation, job approval, and audit live under `/v1`. Production apply is refused. See `docs/ARCHITECTURE.md`.
