@@ -98,11 +98,11 @@ This is a concrete regression example from the repository. Its assertions establ
 - `GET /healthz` → `healthz` in [`src/hybrid/main.py`](src/hybrid/main.py#L11).
 - `GET /sources` → `sources` in [`src/hybrid/main.py`](src/hybrid/main.py#L16).
 - `POST /ask` → `post_ask` in [`src/hybrid/main.py`](src/hybrid/main.py#L24).
-- `GET /readyz` → `readyz` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L44).
-- `POST /workspaces` → `create_workspace` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L49).
-- `GET /workspaces` → `list_workspaces` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L66).
-- `POST /workspaces/{workspace_id}/jobs` → `create_job` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L73).
-- `GET /jobs/{job_id}` → `get_job` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L96).
+- `GET /readyz` → `readyz` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L74).
+- `POST /workspaces` → `create_workspace` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L80).
+- `GET /workspaces` → `list_workspaces` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L98).
+- `POST /workspaces/{workspace_id}/jobs` → `create_job` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L106).
+- `GET /jobs/{job_id}` → `get_job` in [`src/hybrid/ops.py`](src/hybrid/ops.py#L130).
 
 These are literal decorators. Application/router prefixes, authentication, and middleware must be checked in the corresponding setup code.
 
