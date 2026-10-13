@@ -1,5 +1,12 @@
 # Hybrid Search RAG
 
+## Overview
+
+A small retrieval service that answers questions from Markdown files and cites the file and line, such as `rollback.md:3`. Each paragraph is ranked two ways, by BM25 keyword scoring and by cosine similarity on a 64-dimension hashed embedding, and hybrid mode fuses the two lists with reciprocal rank fusion. Every passage in the response carries its BM25, dense and fused scores and ranks, so the ordering can be explained. If the top passage has no BM25 score or covers less than 30% of the question's terms, the question is refused.
+
+- **Built with:** Python, Uvicorn, pytest, Docker Compose, GitHub Actions
+- **Scope:** Local RAG lab with tests; the hashed embedding stands in for a real embedding model and no hosted model is called.
+
 <!-- project-guide:start -->
 ## Project guide
 
